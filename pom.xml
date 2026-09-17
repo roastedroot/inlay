@@ -61,7 +61,7 @@
     <maven-plugin-plugin.version>3.15.2</maven-plugin-plugin.version>
 
     <!-- runtime versions -->
-    <oras.version>0.0.2</oras.version>
+    <oras.version>0.0.3</oras.version>
     <endive.version>1.0.0</endive.version>
     <sigstore.version>2.1.0</sigstore.version>
     <bouncycastle.version>1.85</bouncycastle.version>
