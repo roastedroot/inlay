@@ -4,7 +4,7 @@
 
   <groupId>io.roastedroot</groupId>
   <artifactId>inlay-parent</artifactId>
-  <version>999-SNAPSHOT</version>
+  <version>0.0.4</version>
   <packaging>pom</packaging>
 
   <name>inlay-parent</name>
@@ -47,7 +47,7 @@
     <maven.compiler.release>17</maven.compiler.release>
     <maven.compiler.failOnWarning>true</maven.compiler.failOnWarning>
     <maven.dependency.failOnWarning>true</maven.dependency.failOnWarning>
-    <project.build.outputTimestamp>2026-08-21T14:49:46Z</project.build.outputTimestamp>
+    <project.build.outputTimestamp>2026-09-17T11:25:20Z</project.build.outputTimestamp>
 
     <!-- build tool versions -->
     <checkstyle.version>13.4.2</checkstyle.version>
