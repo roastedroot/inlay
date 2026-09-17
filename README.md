@@ -130,15 +130,32 @@ Verification runs inline after fetch — no separate step. Configure on each mod
   <imageRef>ghcr.io/roastedroot/sqlite4j-wasm:3.51.0</imageRef>
   <outputFile>${project.build.directory}/wasm/libsqlite3.wasm</outputFile>
   <sigstoreIssuer>https://token.actions.githubusercontent.com</sigstoreIssuer>
-  <sigstoreIdentity>https://github.com/roastedroot/*</sigstoreIdentity>
+  <sigstoreIdentity>https://github.com/OWNER/REPO/.github/workflows/wasm-publish.yml@refs/heads/main</sigstoreIdentity>
 </module>
 ```
 
-Uses [sigstore-java](https://github.com/sigstore/sigstore-java) keyless verification. Expects a `.sigstore.json` bundle alongside the artifact.
+`sigstoreIssuer` and `sigstoreIdentity` are matched **exactly** — a glob such as `https://github.com/myorg/*` never matches, because the `*` is compared as a literal character. For patterns, use `sigstoreIssuerRegex` / `sigstoreIdentityRegex` instead:
+
+```xml
+<sigstoreIssuer>https://token.actions.githubusercontent.com</sigstoreIssuer>
+<sigstoreIdentityRegex>https://github\.com/myorg/.*</sigstoreIdentityRegex>
+```
+
+Setting both the exact and the regex form of the same field is an error. Setting neither leaves that field unconstrained.
+
+To read the right values off an existing signature, inspect the signing certificate in the bundle: the identity is its subject alternative name, and the issuer is the OIDC issuer extension (`1.3.6.1.4.1.57264.1.1`). An artifact signed locally rather than by CI has the issuer `https://github.com/login/oauth` and the signer's email address as its identity.
+
+> **A reusable workflow's identity is shared.** For a job run through a reusable workflow, the certificate identity is the *reusable* workflow's ref — for the publisher below, `https://github.com/roastedroot/inlay/.github/workflows/wasm-publish.yml@refs/heads/main` — and it is the same for **every** repository that calls it. Pinning it proves the artifact was signed by something using that workflow, not that it came from the repository you expect. The calling repository appears only in other certificate extensions, which inlay does not currently check. If that distinction matters to you, sign from a workflow of your own instead.
+
+Uses [sigstore-java](https://github.com/sigstore/sigstore-java) keyless verification. The bundle is discovered through OCI referrers on the resolved manifest digest — nothing needs to sit next to the artifact. If several sigstore bundles are attached, each is tried in a stable order and any one that verifies against the configured identity is accepted.
+
+Verification binds to the digest recorded in `wkg.lock`, and the artifact is fetched by that digest, so re-pointing a tag cannot change what you get.
+
+> **Sign with `cosign sign-blob`, not `cosign sign`.** `cosign sign` binds the signature to the OCI manifest digest inside a DSSE envelope, and sigstore-java (through 2.2.0) cannot parse those payloads: it requires an in-toto subject `name`, which is optional per the spec and which cosign omits. inlay reports this explicitly rather than failing obscurely. Once [sigstore-java](https://github.com/sigstore/sigstore-java) makes `InTotoPayload.Subject#getName` `@Nullable`, `cosign sign` will verify with no change to inlay.
 
 ## Publishing wasm to OCI
 
-Requires [oras CLI](https://oras.land/docs/installation) and optionally [cosign](https://docs.sigstore.dev/cosign/system_config/installation/). Packages appear at `https://github.com/orgs/<org>/packages` — [set visibility to public](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility) after first push.
+Requires [oras CLI](https://oras.land/docs/installation) and optionally [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) v3+ (on cosign v2.x, add `--new-bundle-format` to `sign-blob`). Packages appear at `https://github.com/orgs/<org>/packages` — [set visibility to public](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility) after first push.
 
 ```sh
 echo $GHCR_TOKEN | oras login ghcr.io -u $GHCR_USER --password-stdin
@@ -146,7 +163,14 @@ echo $GHCR_TOKEN | oras login ghcr.io -u $GHCR_USER --password-stdin
 oras push ghcr.io/roastedroot/sqlite4j-wasm:3.51.0 \
   libsqlite3.wasm:application/wasm
 
-cosign sign --yes ghcr.io/roastedroot/sqlite4j-wasm:3.51.0
+cosign sign-blob --yes \
+  --bundle libsqlite3.wasm.sigstore.json \
+  libsqlite3.wasm
+
+oras attach \
+  --artifact-type application/vnd.dev.sigstore.bundle.v0.3+json \
+  ghcr.io/roastedroot/sqlite4j-wasm:3.51.0 \
+  libsqlite3.wasm.sigstore.json:application/vnd.dev.sigstore.bundle.v0.3+json
 ```
 
 ### GitHub Actions — publisher

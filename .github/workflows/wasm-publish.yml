@@ -26,10 +26,10 @@ on:
         type: string
         default: '1.2.2'
       cosign-version:
-        description: 'Cosign version'
+        description: 'Cosign version (v3+ required: on v2.x, sign-blob needs --new-bundle-format)'
         required: false
         type: string
-        default: 'v2.4.1'
+        default: 'v3.1.2'
 
 permissions:
   contents: read
@@ -67,8 +67,19 @@ jobs:
             "${{ inputs.image-ref }}:latest" \
             "${{ inputs.wasm-file }}:application/wasm"
 
-      - name: Sign with cosign
+      # sign-blob, not sign: sigstore-java cannot yet parse cosign's DSSE payloads.
+      - name: Sign with cosign and attach the bundle
         if: inputs.sign
         run: |
-          cosign sign --yes "${{ inputs.image-ref }}:${{ inputs.version }}"
-          cosign sign --yes "${{ inputs.image-ref }}:latest"
+          BUNDLE="$(basename "${{ inputs.wasm-file }}").sigstore.json"
+
+          cosign sign-blob --yes \
+            --bundle "$BUNDLE" \
+            "${{ inputs.wasm-file }}"
+
+          for tag in "${{ inputs.version }}" latest; do
+            oras attach \
+              --artifact-type application/vnd.dev.sigstore.bundle.v0.3+json \
+              "${{ inputs.image-ref }}:${tag}" \
+              "$BUNDLE:application/vnd.dev.sigstore.bundle.v0.3+json"
+          done

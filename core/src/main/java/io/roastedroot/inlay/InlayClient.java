@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Stream;
 import land.oras.ArtifactType;
 import land.oras.ContainerRef;
@@ -64,7 +66,8 @@ public final class InlayClient {
             }
         }
 
-        ContainerRef containerRef = ContainerRef.parse(imageRef);
+        // Pull by digest, not by the mutable tag in imageRef.
+        ContainerRef containerRef = ContainerRef.parse(imageRef).withDigest(digest);
 
         try {
             Path tempDir = Files.createTempDirectory("inlay-pull-");
@@ -96,43 +99,81 @@ public final class InlayClient {
     }
 
     public Path fetchSigstoreBundle(String imageRef, String digest, Path bundlePath) {
+        if (bundlePath == null) {
+            throw new InlayException("bundlePath must not be null");
+        }
+        List<byte[]> bundles = fetchSigstoreBundleBlobs(imageRef, digest);
+        if (bundles.isEmpty()) {
+            return null;
+        }
+        return writeBundle(bundles.get(0), bundlePath);
+    }
+
+    /** Every attached bundle, ordered by referrer digest so verification is deterministic. */
+    public List<Path> fetchSigstoreBundles(String imageRef, String digest, Path targetDir) {
+        if (targetDir == null) {
+            throw new InlayException("targetDir must not be null");
+        }
+        List<byte[]> bundles = fetchSigstoreBundleBlobs(imageRef, digest);
+        List<Path> paths = new ArrayList<>();
+        for (int i = 0; i < bundles.size(); i++) {
+            paths.add(writeBundle(bundles.get(i), targetDir.resolve(i + ".sigstore.json")));
+        }
+        return paths;
+    }
+
+    private List<byte[]> fetchSigstoreBundleBlobs(String imageRef, String digest) {
         if (imageRef == null || imageRef.isEmpty()) {
             throw new InlayException("imageRef must not be null or empty");
         }
         if (digest == null || digest.isEmpty()) {
             throw new InlayException("digest must not be null or empty");
         }
-        if (bundlePath == null) {
-            throw new InlayException("bundlePath must not be null");
-        }
+        List<byte[]> bundles = new ArrayList<>();
         try {
             ContainerRef containerRef = ContainerRef.parse(imageRef);
             ContainerRef digestRef = containerRef.withDigest(digest);
             Referrers referrers =
                     registry.getReferrers(
                             digestRef, ArtifactType.from(Const.SIGSTORE_BUNDLE_MEDIA_TYPE));
+
+            List<ManifestDescriptor> matching = new ArrayList<>();
             for (ManifestDescriptor referrer : referrers.getManifests()) {
-                if (!Const.SIGSTORE_BUNDLE_MEDIA_TYPE.equals(referrer.getArtifactType())) {
-                    continue;
+                if (Const.SIGSTORE_BUNDLE_MEDIA_TYPE.equals(referrer.getArtifactType())) {
+                    matching.add(referrer);
                 }
+            }
+            matching.sort(Comparator.comparing(ManifestDescriptor::getDigest));
+
+            for (ManifestDescriptor referrer : matching) {
                 Descriptor descriptor =
                         registry.getDescriptor(digestRef.withDigest(referrer.getDigest()));
                 Manifest signatureManifest = Manifest.fromJson(descriptor.getJson());
                 for (Layer layer : signatureManifest.getLayers()) {
                     if (Const.SIGSTORE_BUNDLE_MEDIA_TYPE.equals(layer.getMediaType())) {
-                        byte[] bundle = registry.getBlob(digestRef.withDigest(layer.getDigest()));
-                        Files.createDirectories(bundlePath.getParent());
-                        Files.write(bundlePath, bundle);
-                        return bundlePath;
+                        bundles.add(registry.getBlob(digestRef.withDigest(layer.getDigest())));
                     }
                 }
             }
         } catch (InlayException e) {
             throw e;
-        } catch (RuntimeException | IOException e) {
+        } catch (RuntimeException e) {
             throw new InlayException("Failed to fetch sigstore bundle for: " + imageRef, e);
         }
-        return null;
+        return bundles;
+    }
+
+    private static Path writeBundle(byte[] bundle, Path bundlePath) {
+        try {
+            Path parent = bundlePath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.write(bundlePath, bundle);
+            return bundlePath;
+        } catch (IOException e) {
+            throw new InlayException("Failed to write sigstore bundle: " + bundlePath, e);
+        }
     }
 
     public String getDigest(String imageRef) {

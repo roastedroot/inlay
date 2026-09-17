@@ -9,6 +9,8 @@ public class ModuleConfig {
     private File outputFile;
     private String sigstoreIssuer;
     private String sigstoreIdentity;
+    private String sigstoreIssuerRegex;
+    private String sigstoreIdentityRegex;
 
     public String getImageRef() {
         return imageRef;
@@ -48,5 +50,23 @@ public class ModuleConfig {
 
     public void setSigstoreIdentity(String sigstoreIdentity) {
         this.sigstoreIdentity = sigstoreIdentity;
+    }
+
+    /** Regular expression alternative to {@link #getSigstoreIssuer()}, which matches exactly. */
+    public String getSigstoreIssuerRegex() {
+        return sigstoreIssuerRegex;
+    }
+
+    public void setSigstoreIssuerRegex(String sigstoreIssuerRegex) {
+        this.sigstoreIssuerRegex = sigstoreIssuerRegex;
+    }
+
+    /** Regular expression alternative to {@link #getSigstoreIdentity()}, which matches exactly. */
+    public String getSigstoreIdentityRegex() {
+        return sigstoreIdentityRegex;
+    }
+
+    public void setSigstoreIdentityRegex(String sigstoreIdentityRegex) {
+        this.sigstoreIdentityRegex = sigstoreIdentityRegex;
     }
 }

@@ -1,5 +1,7 @@
 package io.roastedroot.inlay.maven;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -7,6 +9,8 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import land.oras.ContainerRef;
 import land.oras.LocalPath;
 import land.oras.Registry;
@@ -148,6 +152,28 @@ class FetchMojoIT {
 
         Path expectedOutput = tempDir.resolve("target/wasm/mojo-default-out.wasm");
         assertTrue(Files.exists(expectedOutput));
+    }
+
+    @Test
+    void failedVerificationLeavesNoTempFilesBehind() throws Exception {
+        String ref = pushTestWasm("mojo-verify-cleanup");
+
+        File outputFile = tempDir.resolve("output/mojo-verify-cleanup.wasm").toFile();
+        ModuleConfig module = new ModuleConfig();
+        module.setImageRef(ref);
+        module.setOutputFile(outputFile);
+        module.setSigstoreIssuer("https://token.actions.githubusercontent.com");
+        module.setSigstoreIdentity("https://github.com/example/nobody");
+
+        FetchMojo mojo = createMojo(module);
+        MojoExecutionException ex =
+                assertThrows(MojoExecutionException.class, () -> mojo.execute());
+        assertTrue(ex.getMessage().contains("No sigstore bundle found"));
+
+        assertFalse(outputFile.exists(), "unverified artifact must not be published");
+        try (Stream<Path> leftovers = Files.list(outputFile.toPath().getParent())) {
+            assertEquals(List.of(), leftovers.collect(Collectors.toList()));
+        }
     }
 
     private FetchMojo createMojo(ModuleConfig module) throws Exception {
